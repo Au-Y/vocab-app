@@ -1,0 +1,19 @@
+{
+  "name": "VocabApp - 背单词",
+  "short_name": "VocabApp",
+  "description": "简洁高效的背单词应用，支持闪卡记忆和选择题测验",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f0f2f5",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"]
+}

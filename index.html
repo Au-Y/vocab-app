@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>背单词 - VocabApp</title>
+
+  <!-- PWA Meta -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VocabApp">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <meta name="description" content="简洁高效的背单词应用">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 顶部导航 -->
+    <header class="app-header">
+      <h1 class="app-title">📖 背单词</h1>
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="study">📝 学习</button>
+        <button class="tab-btn" data-tab="quiz">🎯 测验</button>
+        <button class="tab-btn" data-tab="wordlist">📚 单词本</button>
+        <button class="tab-btn" data-tab="import">📥 导入</button>
+      </nav>
+    </header>
+
+    <!-- 学习面板 -->
+    <main class="tab-panel active" id="panel-study">
+      <div class="study-header">
+        <div class="study-stats">
+          <span class="stat-badge">今日待复习：<strong id="due-count">0</strong> 个</span>
+          <span class="stat-badge">已复习：<strong id="done-count">0</strong> 个</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="study-progress"></div>
+        </div>
+      </div>
+
+      <div class="card-container" id="card-container">
+        <div class="flashcard" id="flashcard">
+          <div class="card-face card-front">
+            <div class="card-word" id="card-word"></div>
+            <div class="card-hint">点击卡片或按空格键翻转</div>
+          </div>
+          <div class="card-face card-back">
+            <div class="card-definition" id="card-definition"></div>
+            <div class="card-example" id="card-example"></div>
+            <div class="card-meta" id="card-meta"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rating-area" id="rating-area" style="display:none;">
+        <p class="rating-label">你记住了吗？</p>
+        <div class="rating-btns">
+          <button class="rate-btn rate-0" data-score="0">0<br><small>完全忘了</small></button>
+          <button class="rate-btn rate-1" data-score="1">1<br><small>有点印象</small></button>
+          <button class="rate-btn rate-2" data-score="2">2<br><small>不太熟</small></button>
+          <button class="rate-btn rate-3" data-score="3">3<br><small>还行</small></button>
+          <button class="rate-btn rate-4" data-score="4">4<br><small>挺熟的</small></button>
+          <button class="rate-btn rate-5" data-score="5">5<br><small>秒懂</small></button>
+        </div>
+        <p class="shortcut-hint">键盘快捷键：<kbd>0</kbd>-<kbd>5</kbd> 评分，<kbd>Space</kbd> 翻转</p>
+      </div>
+
+      <div class="empty-state" id="study-empty">
+        <div class="empty-icon">🎉</div>
+        <p>今日没有需要复习的单词！</p>
+        <p class="empty-sub">去「单词本」添加单词，或在「测验」中挑战自己</p>
+      </div>
+    </main>
+
+    <!-- 测验面板 -->
+    <main class="tab-panel" id="panel-quiz">
+      <div class="quiz-area" id="quiz-active">
+        <div class="quiz-header">
+          <span class="quiz-progress">第 <strong id="quiz-current">1</strong> / <span id="quiz-total">10</span> 题</span>
+          <span class="quiz-score">得分：<strong id="quiz-score">0</strong></span>
+        </div>
+        <div class="quiz-word" id="quiz-word"></div>
+        <div class="quiz-options" id="quiz-options"></div>
+        <div class="quiz-feedback" id="quiz-feedback"></div>
+      </div>
+
+      <div class="quiz-result" id="quiz-result" style="display:none;">
+        <div class="result-icon" id="result-icon"></div>
+        <h2>测验结束</h2>
+        <p class="result-score">得分：<strong id="result-score">0</strong> / <span id="result-total">10</span></p>
+        <div class="result-detail" id="result-detail"></div>
+        <button class="btn btn-primary" id="quiz-retry">再来一轮</button>
+      </div>
+
+      <div class="empty-state" id="quiz-empty" style="display:none;">
+        <div class="empty-icon">📭</div>
+        <p>单词本里单词不够</p>
+        <p class="empty-sub">至少需要 4 个单词才能开始测验</p>
+      </div>
+    </main>
+
+    <!-- 单词本面板 -->
+    <main class="tab-panel" id="panel-wordlist">
+      <div class="wordlist-toolbar">
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="🔍 搜索单词或释义...">
+        </div>
+        <div class="sort-box">
+          <select id="sort-select">
+            <option value="createdAt">按添加时间</option>
+            <option value="nextReview">按复习日期</option>
+            <option value="ease">按掌握程度</option>
+            <option value="word">按字母顺序</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="add-word-btn">+ 添加单词</button>
+        <button class="btn btn-outline" id="export-btn">📤 导出</button>
+      </div>
+      <div class="wordlist-count">共 <strong id="wordlist-count">0</strong> 个单词</div>
+      <div class="wordlist" id="wordlist"></div>
+      <div class="empty-state" id="wordlist-empty">
+        <div class="empty-icon">📭</div>
+        <p>单词本是空的</p>
+        <p class="empty-sub">去「导入」批量导入，或点击上方按钮手动添加</p>
+      </div>
+    </main>
+
+    <!-- 导入面板 -->
+    <main class="tab-panel" id="panel-import">
+      <div class="import-tabs">
+        <button class="import-tab-btn active" data-import="csv">📄 CSV 文件</button>
+        <button class="import-tab-btn" data-import="text">✏️ 文本粘贴</button>
+      </div>
+
+      <div class="import-panel active" id="import-csv">
+        <div class="drop-zone" id="drop-zone">
+          <div class="drop-icon">📁</div>
+          <p>拖拽 CSV 文件到此处，或点击选择</p>
+          <p class="drop-hint">格式：单词,释义,例句（例句可选）</p>
+          <input type="file" id="csv-file-input" accept=".csv" hidden>
+        </div>
+      </div>
+
+      <div class="import-panel" id="import-text">
+        <textarea id="text-import-area" placeholder="每行一个单词，格式：&#10;apple - 苹果&#10;banana - 香蕉&#10;或者：&#10;apple,苹果,一种水果&#10;banana,香蕉"></textarea>
+        <button class="btn btn-primary" id="text-parse-btn">解析文本</button>
+      </div>
+
+      <div class="import-preview" id="import-preview" style="display:none;">
+        <h3>预览导入</h3>
+        <div class="preview-info">
+          <span>解析到 <strong id="preview-total">0</strong> 个单词</span>
+          <span>其中 <strong id="preview-new">0</strong> 个新词</span>
+          <span style="color:#e67e22">跳过 <strong id="preview-dup">0</strong> 个重复</span>
+        </div>
+        <div class="preview-list" id="preview-list"></div>
+        <div class="preview-actions">
+          <button class="btn btn-primary" id="import-confirm">确认导入</button>
+          <button class="btn btn-outline" id="import-cancel">取消</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部状态栏 -->
+    <footer class="app-footer">
+      <span>总单词：<strong id="footer-total">0</strong></span>
+      <span>已掌握：<strong id="footer-mastered">0</strong></span>
+      <span>今日待复习：<strong id="footer-due">0</strong></span>
+    </footer>
+  </div>
+
+  <!-- 添加/编辑单词弹窗 -->
+  <div class="modal-overlay" id="word-modal">
+    <div class="modal">
+      <h3 id="modal-title">添加单词</h3>
+      <div class="form-group">
+        <label>单词 <span class="required">*</span></label>
+        <input type="text" id="form-word" placeholder="输入英文单词" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>释义 <span class="required">*</span></label>
+        <input type="text" id="form-definition" placeholder="输入中文释义">
+      </div>
+      <div class="form-group">
+        <label>例句</label>
+        <input type="text" id="form-example" placeholder="可选：输入例句">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="modal-save">保存</button>
+        <button class="btn btn-outline" id="modal-cancel">取消</button>
+      </div>
+      <input type="hidden" id="form-id">
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
