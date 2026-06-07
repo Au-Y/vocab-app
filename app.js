@@ -86,6 +86,7 @@ class WordStore {
   getById(id) { return this.words.find(w => w.id === id); }
 
   add(word, definition, example = '') {
+    const now = new Date().toISOString();
     const w = {
       id: crypto.randomUUID(),
       word: word.trim(),
@@ -95,26 +96,30 @@ class WordStore {
       interval: 0,
       repetitions: 0,
       nextReview: today(),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       reviewCount: 0,
       correctCount: 0
     };
     this.words.push(w);
     this.save();
+    syncModule.schedulePush();
     return w;
   }
 
   update(id, data) {
     const idx = this.words.findIndex(w => w.id === id);
     if (idx === -1) return null;
-    this.words[idx] = { ...this.words[idx], ...data };
+    this.words[idx] = { ...this.words[idx], ...data, updatedAt: new Date().toISOString() };
     this.save();
+    syncModule.schedulePush();
     return this.words[idx];
   }
 
   delete(id) {
     this.words = this.words.filter(w => w.id !== id);
     this.save();
+    syncModule.schedulePush();
   }
 
   // 导入单词列表，自动去重
@@ -819,6 +824,13 @@ function updateFooter() {
   $('#footer-total').textContent = stats.total;
   $('#footer-mastered').textContent = stats.mastered;
   $('#footer-due').textContent = stats.due;
+
+  // 更新同步状态图标
+  if (syncModule.isConfigured()) {
+    syncModule._setStatus('synced');
+  } else {
+    syncModule._setStatus('unset');
+  }
 }
 
 // ─── Tab 切换 ─────────────────────────────────────────────
@@ -843,7 +855,192 @@ function setupTabs() {
   });
 }
 
+// ─── 云同步模块 ────────────────────────────────────────────
+class SyncModule {
+  constructor() {
+    this.token = localStorage.getItem('vocabapp-sync-token') || '';
+    this.repo = localStorage.getItem('vocabapp-sync-repo') || 'Au-Y/vocab-app';
+    this.autoSync = localStorage.getItem('vocabapp-sync-auto') !== 'false';
+    this.pushTimer = null;
+    this._statusEl = null;
+  }
+
+  // 调度延迟推送（防抖 2 秒）
+  schedulePush() {
+    if (!this.token || !this.autoSync) return;
+    clearTimeout(this.pushTimer);
+    this.pushTimer = setTimeout(() => this.push(), 2000);
+  }
+
+  // 更新状态指示器
+  _setStatus(status) {
+    const el = this._statusEl || $('#sync-status');
+    this._statusEl = el;
+    if (!el) return;
+    el.className = 'sync-status ' + status;
+    const icons = { synced: '☁️', syncing: '🔄', error: '⚠️', unset: '☁️' };
+    const titles = { synced: '已同步', syncing: '同步中...', error: '同步失败，点击设置', unset: '点击设置云同步' };
+    el.textContent = icons[status] || icons.unset;
+    el.title = titles[status] || titles.unset;
+  }
+
+  // 检查是否已配置
+  isConfigured() { return !!this.token; }
+
+  // 保存配置
+  configure(token, repo, autoSync) {
+    this.token = token;
+    this.repo = repo || 'Au-Y/vocab-app';
+    this.autoSync = autoSync;
+    localStorage.setItem('vocabapp-sync-token', token);
+    localStorage.setItem('vocabapp-sync-repo', this.repo);
+    localStorage.setItem('vocabapp-sync-auto', autoSync ? 'true' : 'false');
+    this._setStatus('synced');
+  }
+
+  // 构建 API URL
+  _apiUrl() {
+    return `https://api.github.com/repos/${this.repo}/contents/data/words.json`;
+  }
+
+  // 拉取远程数据
+  async pull() {
+    if (!this.token) {
+      this._log('请先设置 GitHub Token', 'error');
+      return null;
+    }
+
+    this._setStatus('syncing');
+    this._log('正在拉取...');
+
+    try {
+      const resp = await fetch(this._apiUrl(), {
+        headers: { Authorization: `token ${this.token}`, Accept: 'application/vnd.github.v3+json' }
+      });
+
+      if (!resp.ok) {
+        if (resp.status === 404) {
+          this._log('远程暂无数据', 'success');
+          this._setStatus('synced');
+          return [];
+        }
+        throw new Error(`HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      // GitHub API 返回的 content 是 base64 编码的
+      const content = JSON.parse(atob(data.content.replace(/\n/g, '')));
+      this._sha = data.sha;
+      this._log('拉取成功', 'success');
+      this._setStatus('synced');
+      return content;
+    } catch (err) {
+      this._log('拉取失败: ' + err.message, 'error');
+      this._setStatus('error');
+      return null;
+    }
+  }
+
+  // 推送本地数据到远程
+  async push() {
+    if (!this.token) return;
+
+    this._setStatus('syncing');
+
+    try {
+      // 先获取最新的 SHA
+      let sha = this._sha;
+      try {
+        const resp = await fetch(this._apiUrl(), {
+          headers: { Authorization: `token ${this.token}`, Accept: 'application/vnd.github.v3+json' }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          sha = data.sha;
+        }
+      } catch {}
+
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(store.words, null, 2))));
+
+      const putResp = await fetch(this._apiUrl(), {
+        method: 'PUT',
+        headers: {
+          Authorization: `token ${this.token}`,
+          Accept: 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: `Sync: ${store.words.length} words [${new Date().toLocaleString('zh-CN')}]`,
+          content: content,
+          sha: sha
+        })
+      });
+
+      if (!putResp.ok) {
+        const err = await putResp.json();
+        throw new Error(err.message || `HTTP ${putResp.status}`);
+      }
+
+      const data = await putResp.json();
+      this._sha = data.content.sha;
+      this._setStatus('synced');
+    } catch (err) {
+      this._log('推送失败: ' + err.message, 'error');
+      this._setStatus('error');
+    }
+  }
+
+  // 合并远程和本地数据（按 updatedAt 时间戳，新者胜）
+  merge(localWords, remoteWords) {
+    if (!remoteWords || remoteWords.length === 0) return localWords;
+
+    const localMap = new Map(localWords.map(w => [w.id, w]));
+    const remoteMap = new Map(remoteWords.map(w => [w.id, w]));
+
+    // 远程有但本地没有的 → 加入本地
+    for (const [id, rw] of remoteMap) {
+      if (!localMap.has(id)) {
+        localMap.set(id, rw);
+      } else {
+        // 两边都有 → 比较 updatedAt，保留新的
+        const lw = localMap.get(id);
+        const lt = lw.updatedAt || lw.createdAt || '';
+        const rt = rw.updatedAt || rw.createdAt || '';
+        if (rt > lt) {
+          localMap.set(id, rw);
+        }
+      }
+    }
+
+    // 本地有但远程没有的 → 保留（推送时会同步过去）
+    return [...localMap.values()];
+  }
+
+  // 完整同步流程
+  async syncNow() {
+    if (!this.token) return;
+
+    const remote = await this.pull();
+    if (remote !== null) {
+      store.words = this.merge(store.words, remote);
+      store.save();
+      wordListView.render();
+      updateFooter();
+      await this.push();
+    }
+  }
+
+  _log(msg, type) {
+    const el = $('#sync-log');
+    if (el) {
+      el.textContent = msg;
+      el.className = 'sync-log ' + (type || '');
+    }
+  }
+}
+
 // ─── 全局实例 ─────────────────────────────────────────────
+const syncModule = new SyncModule();
 const flashcardView = new FlashcardView();
 const quizView = new QuizView();
 const wordListView = new WordListView();
@@ -872,10 +1069,82 @@ function registerSW() {
   }
 }
 
+// ─── 同步设置 UI ──────────────────────────────────────────
+function setupSyncUI() {
+  const modal = $('#sync-modal');
+  const tokenInput = $('#sync-token');
+  const repoInput = $('#sync-repo');
+  const autoCheck = $('#sync-auto');
+  const logEl = $('#sync-log');
+
+  // 打开同步设置
+  $('#sync-status').addEventListener('click', () => {
+    tokenInput.value = syncModule.token;
+    repoInput.value = syncModule.repo;
+    autoCheck.checked = syncModule.autoSync;
+    logEl.textContent = '';
+    modal.classList.add('active');
+  });
+
+  // 关闭
+  const closeModal = () => modal.classList.remove('active');
+  $('#sync-close').addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('active')) closeModal();
+  });
+
+  // 保存配置
+  $('#sync-save').addEventListener('click', () => {
+    const token = tokenInput.value.trim();
+    const repo = repoInput.value.trim() || 'Au-Y/vocab-app';
+    const auto = autoCheck.checked;
+    syncModule.configure(token, repo, auto);
+    closeModal();
+    // 配置后立即同步
+    syncModule.syncNow();
+  });
+
+  // 手动拉取
+  $('#sync-pull-btn').addEventListener('click', async () => {
+    const token = tokenInput.value.trim();
+    if (!token) { syncModule._log('请先输入 Token', 'error'); return; }
+    syncModule.configure(token, repoInput.value.trim(), autoCheck.checked);
+    const remote = await syncModule.pull();
+    if (remote !== null) {
+      store.words = syncModule.merge(store.words, remote);
+      store.save();
+      wordListView.render();
+      updateFooter();
+      syncModule._log(`拉取完成，共 ${store.words.length} 个单词`, 'success');
+    }
+  });
+
+  // 手动推送
+  $('#sync-push-btn').addEventListener('click', async () => {
+    const token = tokenInput.value.trim();
+    if (!token) { syncModule._log('请先输入 Token', 'error'); return; }
+    syncModule.configure(token, repoInput.value.trim(), autoCheck.checked);
+    await syncModule.push();
+    syncModule._log(`推送完成，共 ${store.words.length} 个单词`, 'success');
+  });
+}
+
 // ─── 启动应用 ─────────────────────────────────────────────
-function init() {
+async function init() {
   setupTabs();
+  setupSyncUI();
   updateFooter();
+
+  // 如果已配置同步，启动时自动拉取合并
+  if (syncModule.isConfigured()) {
+    const remote = await syncModule.pull();
+    if (remote !== null && remote.length > 0) {
+      store.words = syncModule.merge(store.words, remote);
+      store.save();
+    }
+  }
+
   wordListView.render();
   flashcardView.load();
   registerSW();

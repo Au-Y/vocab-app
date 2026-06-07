@@ -688,3 +688,54 @@ body {
   .wordlist-toolbar { flex-direction: column; }
   .wordlist-toolbar .btn { width: 100%; }
 }
+
+/* === 同步设置 === */
+.sync-status {
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background var(--transition);
+}
+
+.sync-status:hover { background: var(--gray-100); }
+
+.sync-status.synced { color: var(--success); }
+.sync-status.syncing { color: var(--warning); animation: pulse 1s infinite; }
+.sync-status.error { color: var(--danger); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.sync-desc {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin-bottom: 16px;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-top: 4px;
+}
+
+.form-hint a { color: var(--primary-light); }
+
+.sync-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.sync-log {
+  font-size: 12px;
+  color: var(--gray-500);
+  min-height: 18px;
+  margin-bottom: 8px;
+}
+
+.sync-log.success { color: var(--success); }
+.sync-log.error { color: var(--danger); }
+}
