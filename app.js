@@ -66,10 +66,29 @@ class WordStore {
   load() {
     try {
       const raw = localStorage.getItem('vocabapp-words');
-      this.words = raw ? JSON.parse(raw) : [];
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        // 如果之前存的是空数组，也加载预置词汇
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.words = parsed;
+          return;
+        }
+      }
     } catch {
-      this.words = [];
+      // fall through
     }
+    // 首次使用或之前为空：从 embedded data 加载预置词汇
+    try {
+      if (typeof INITIAL_WORDS !== 'undefined' && INITIAL_WORDS.length > 0) {
+        this.words = INITIAL_WORDS;
+        this.save();
+        console.log(`Loaded ${this.words.length} initial words from embedded data`);
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    this.words = [];
   }
 
   save() {
